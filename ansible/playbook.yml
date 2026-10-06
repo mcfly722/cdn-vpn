@@ -1,0 +1,60 @@
+---
+- name: Ensure Google Cloud load balancers exist
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../config/inventory.yaml
+  vars:
+    project_id: "{{ lookup('env', 'GCP_PROJECT_ID') }}"
+  tasks:
+    - name: Require project ID
+      ansible.builtin.assert:
+        that:
+          - project_id | length > 0
+        fail_msg: Set GCP_PROJECT_ID before running the playbook.
+
+    - name: Verify gcloud authentication
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - auth
+          - print-access-token
+      changed_when: false
+      no_log: true
+
+    - name: Ensure shared VPC network
+      ansible.builtin.include_tasks: tasks/ensure_resource.yml
+      vars:
+        resource_label: VPC network lb-network
+        resource_describe:
+          - gcloud
+          - compute
+          - networks
+          - describe
+          - lb-network
+          - "--project={{ project_id }}"
+        resource_create:
+          - gcloud
+          - compute
+          - networks
+          - create
+          - lb-network
+          - "--project={{ project_id }}"
+          - --subnet-mode=custom
+          - --bgp-routing-mode=regional
+          - --bgp-best-path-selection-mode=legacy
+
+    - name: Ensure regional shared resources
+      ansible.builtin.include_tasks: tasks/region.yml
+      loop: "{{ proxy_subnet_cidrs | dict2items }}"
+      loop_control:
+        loop_var: region_item
+        label: "{{ region_item.key }}"
+
+    - name: Ensure balancer resources
+      ansible.builtin.include_tasks: tasks/balancer.yml
+      loop: "{{ balancers | dict2items }}"
+      loop_control:
+        loop_var: balancer_item
+        label: "{{ balancer_item.key }}"

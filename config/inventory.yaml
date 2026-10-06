@@ -1,0 +1,15 @@
+dns_managed_zone: cdn2954732
+
+proxy_subnet_cidrs:
+  europe-west4: 10.0.0.0/24
+
+router_asn: 64514
+health_check_port: 445
+
+balancers:
+  balancer1:
+    region: europe-west4
+    dns_name: balancer1.cdn2954732.de5.net.
+    backend_fqdn: v1025101.hosted-by-vdsina.ru
+    backend_port: 445
+    frontend_port: 443

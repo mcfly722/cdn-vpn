@@ -1,0 +1,101 @@
+---
+- name: Ensure proxy-only subnet
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "proxy subnet lb-subnet ({{ region_item.key }})"
+    resource_describe:
+      - gcloud
+      - compute
+      - networks
+      - subnets
+      - describe
+      - lb-subnet
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+    resource_create:
+      - gcloud
+      - compute
+      - networks
+      - subnets
+      - create
+      - lb-subnet
+      - "--project={{ project_id }}"
+      - --network=lb-network
+      - "--region={{ region_item.key }}"
+      - --purpose=REGIONAL_MANAGED_PROXY
+      - --role=ACTIVE
+      - "--range={{ region_item.value }}"
+
+- name: Ensure router egress address
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "egress address lb-router-ip ({{ region_item.key }})"
+    resource_describe:
+      - gcloud
+      - compute
+      - addresses
+      - describe
+      - lb-router-ip
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+    resource_create:
+      - gcloud
+      - compute
+      - addresses
+      - create
+      - lb-router-ip
+      - "--project={{ project_id }}"
+      - --description=IP for egress router traffic
+      - --network-tier=STANDARD
+      - "--region={{ region_item.key }}"
+
+- name: Ensure Cloud Router
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "Cloud Router lb-router ({{ region_item.key }})"
+    resource_describe:
+      - gcloud
+      - compute
+      - routers
+      - describe
+      - lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+    resource_create:
+      - gcloud
+      - compute
+      - routers
+      - create
+      - lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+      - --network=lb-network
+      - "--asn={{ router_asn }}"
+
+- name: Ensure Cloud NAT
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "Cloud NAT lb-nat ({{ region_item.key }})"
+    resource_describe:
+      - gcloud
+      - compute
+      - routers
+      - nats
+      - describe
+      - lb-nat
+      - --router=lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+    resource_create:
+      - gcloud
+      - compute
+      - routers
+      - nats
+      - create
+      - lb-nat
+      - --router=lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ region_item.key }}"
+      - --endpoint-types=ENDPOINT_TYPE_MANAGED_PROXY_LB
+      - --nat-custom-subnet-ip-ranges=lb-subnet
+      - --nat-external-ip-pool=lb-router-ip

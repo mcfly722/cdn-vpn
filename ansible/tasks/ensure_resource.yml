@@ -1,0 +1,27 @@
+---
+- name: "Check {{ resource_label }}"
+  ansible.builtin.command:
+    argv: "{{ resource_describe }}"
+  register: resource_check
+  changed_when: false
+  failed_when: >-
+    resource_check.rc != 0 and
+    'not_found' not in ((resource_check.stderr | default('')) | lower) and
+    'not found' not in ((resource_check.stderr | default('')) | lower) and
+    'not_found' not in ((resource_check.stdout | default('')) | lower) and
+    'not found' not in ((resource_check.stdout | default('')) | lower)
+
+- name: "Skip existing {{ resource_label }}"
+  ansible.builtin.debug:
+    msg: Existing resource found by name; leaving it unchanged.
+  when: resource_check.rc == 0
+
+- name: "Create missing {{ resource_label }}"
+  ansible.builtin.command:
+    argv: "{{ resource_create }}"
+  register: resource_create_result
+  when: resource_check.rc != 0
+
+- name: Record whether {{ resource_label }} was created
+  ansible.builtin.set_fact:
+    resource_created: "{{ resource_create_result is changed }}"

@@ -1,0 +1,272 @@
+---
+- name: Set balancer resource names
+  ansible.builtin.set_fact:
+    balancer_name: "{{ balancer_item.key }}"
+    balancer_region: "{{ balancer_item.value.region }}"
+    balancer_dns_name: "{{ balancer_item.value.dns_name }}"
+    balancer_backend_fqdn: "{{ balancer_item.value.backend_fqdn }}"
+    balancer_backend_port: "{{ balancer_item.value.backend_port }}"
+    balancer_frontend_port: "{{ balancer_item.value.frontend_port | default(443) }}"
+    neg_name: "{{ balancer_item.key }}-neg"
+    health_check_name: "{{ balancer_item.key }}-health-check"
+    backend_service_name: "{{ balancer_item.key }}-lb"
+    target_proxy_name: "{{ balancer_item.key }}-lb-target-proxy"
+    ingress_address_name: "{{ balancer_item.key }}-ip"
+    forwarding_rule_name: "{{ balancer_item.key }}-lb-forwarding-rule"
+
+- name: Ensure Internet NEG
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "Internet NEG {{ neg_name }}"
+    resource_describe:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - describe
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - create
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --network-endpoint-type=INTERNET_FQDN_PORT
+      - --network=lb-network
+
+- name: Ensure regional TCP health check
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "health check {{ health_check_name }}"
+    resource_describe:
+      - gcloud
+      - compute
+      - health-checks
+      - describe
+      - "{{ health_check_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - compute
+      - health-checks
+      - create
+      - tcp
+      - "{{ health_check_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--port={{ health_check_port }}"
+      - --timeout=5s
+      - --check-interval=5s
+      - --healthy-threshold=2
+      - --unhealthy-threshold=3
+
+- name: Ensure regional backend service
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "backend service {{ backend_service_name }}"
+    resource_describe:
+      - gcloud
+      - compute
+      - backend-services
+      - describe
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - compute
+      - backend-services
+      - create
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --load-balancing-scheme=EXTERNAL_MANAGED
+      - --protocol=TCP
+      - --timeout=30s
+      - --connection-draining-timeout=300s
+      - --session-affinity=NONE
+      - --locality-lb-policy=ROUND_ROBIN
+
+- name: Attach health check to newly created backend service
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - backend-services
+      - update
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--health-checks={{ health_check_name }}"
+      - "--health-checks-region={{ balancer_region }}"
+  when: resource_created | bool
+
+- name: Attach NEG to newly created backend service
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - backend-services
+      - add-backend
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--network-endpoint-group={{ neg_name }}"
+      - "--network-endpoint-group-region={{ balancer_region }}"
+      - --balancing-mode=CONNECTION
+      - --max-connections-per-endpoint=1000
+      - --capacity-scaler=1
+  when: resource_created | bool
+
+- name: List endpoints in Internet NEG
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - list-network-endpoints
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=value(networkEndpoint.fqdn,networkEndpoint.port)
+  register: endpoint_list
+  changed_when: false
+
+- name: Add backend endpoint if absent
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - update
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--add-endpoint=fqdn={{ balancer_backend_fqdn }},port={{ balancer_backend_port }}"
+  when: >-
+    endpoint_list.stdout_lines
+    | select('match', '^' ~ (balancer_backend_fqdn | regex_escape) ~ '\s+' ~ (balancer_backend_port | string) ~ '$')
+    | list
+    | length == 0
+
+- name: Ensure target TCP proxy
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "target TCP proxy {{ target_proxy_name }}"
+    resource_describe:
+      - gcloud
+      - compute
+      - target-tcp-proxies
+      - describe
+      - "{{ target_proxy_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - compute
+      - target-tcp-proxies
+      - create
+      - "{{ target_proxy_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--backend-service={{ backend_service_name }}"
+      - --proxy-header=NONE
+
+- name: Ensure ingress address
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "ingress address {{ ingress_address_name }}"
+    resource_describe:
+      - gcloud
+      - compute
+      - addresses
+      - describe
+      - "{{ ingress_address_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - compute
+      - addresses
+      - create
+      - "{{ ingress_address_name }}"
+      - "--project={{ project_id }}"
+      - --description=IP for ingress balancer traffic
+      - --network-tier=STANDARD
+      - "--region={{ balancer_region }}"
+
+- name: Ensure forwarding rule
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "forwarding rule {{ forwarding_rule_name }}"
+    resource_describe:
+      - gcloud
+      - compute
+      - forwarding-rules
+      - describe
+      - "{{ forwarding_rule_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - compute
+      - forwarding-rules
+      - create
+      - "{{ forwarding_rule_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --load-balancing-scheme=EXTERNAL_MANAGED
+      - --network=lb-network
+      - --network-tier=STANDARD
+      - --ip-protocol=TCP
+      - "--ports={{ balancer_frontend_port }}"
+      - "--address={{ ingress_address_name }}"
+      - "--target-tcp-proxy={{ target_proxy_name }}"
+      - "--target-tcp-proxy-region={{ balancer_region }}"
+
+- name: Read reserved ingress IP
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - addresses
+      - describe
+      - "{{ ingress_address_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=get(address)
+  register: ingress_ip
+  changed_when: false
+
+- name: Ensure DNS A record
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "DNS A record {{ balancer_dns_name }}"
+    resource_describe:
+      - gcloud
+      - dns
+      - record-sets
+      - describe
+      - "{{ balancer_dns_name }}"
+      - "--project={{ project_id }}"
+      - "--zone={{ dns_managed_zone }}"
+      - --type=A
+    resource_create:
+      - gcloud
+      - dns
+      - record-sets
+      - create
+      - "{{ balancer_dns_name }}"
+      - "--project={{ project_id }}"
+      - "--zone={{ dns_managed_zone }}"
+      - --type=A
+      - --ttl=300
+      - "--rrdatas={{ ingress_ip.stdout }}"
