@@ -40,8 +40,11 @@ sudo apt install google-cloud-cli
 После установки зависимостей задайте проект, войдите в Google Cloud CLI и запустите playbook:
 
 ```bash
-export GCP_PROJECT_ID="vpn-cdn"
 gcloud auth login --no-launch-browser
+# идем по предоставленной ссылке чтобы получить токен для аутентификации, авторизуем токеном gcloud консоль
+
+
+export GCP_PROJECT_ID="vpn-cdn"
 gcloud config set project "$GCP_PROJECT_ID"
 ansible-playbook ansible/playbook.yml
 ```

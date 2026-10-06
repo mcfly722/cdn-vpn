@@ -37,11 +37,13 @@ sudo apt update
 sudo apt install google-cloud-cli
 ```
 
-After installing Ansible, select the project, authenticate with gcloud, and run the playbook:
+After installing the dependencies, authenticate with gcloud, select the project, and run the playbook:
 
 ```bash
-export GCP_PROJECT_ID="vpn-cdn"
 gcloud auth login --no-launch-browser
+# Open the displayed URL, complete authentication, and enter the verification code in the terminal.
+
+export GCP_PROJECT_ID="vpn-cdn"
 gcloud config set project "$GCP_PROJECT_ID"
 ansible-playbook ansible/playbook.yml
 ```
@@ -78,15 +80,15 @@ balancers:
 | --- | --- |
 | `dns_managed_zone` | Name of the existing Cloud DNS managed zone in the project. |
 | `proxy_subnet_cidrs` | Map of region to proxy-only subnet CIDR. Add an entry for every region; CIDRs must not overlap other VPC subnets. |
-| Key in `balancers` | Unique base name for the balancer. The script derives the NEG, backend service, health check, target proxy, forwarding rule, and ingress IP names from it. |
+| Key in `balancers` | Unique base name for the balancer. The playbook derives the NEG, backend service, health check, target proxy, forwarding rule, and ingress IP names from it. |
 | `balancers.<name>.region` | Google Cloud region for this balancer. Balancers in the same region share that region's proxy-only subnet, router, NAT, and egress IP. |
 | `balancers.<name>.dns_name` | Unique fully qualified DNS hostname for this balancer's A record. Use a trailing dot and a hostname in the selected managed zone. |
 | `balancers.<name>.backend_fqdn` | Public DNS name of the backend server registered in the Internet NEG. |
 | `balancers.<name>.backend_port` | Port of the backend endpoint. |
 | `balancers.<name>.frontend_port` | TCP port clients connect to; defaults to `443`. |
 
-`GCP_PROJECT_ID` is read from the local environment. `router_asn` and `health_check_port` are set in the YAML inventory. Ansible itself requires Python on the control machine.
+`GCP_PROJECT_ID` is read from the local environment. `router_asn` and `health_check_port` are set in the YAML inventory. Ansible requires Python on the control machine.
 
-Add a balancer by adding another unique key under `balancers` and setting its named fields. Add a `proxy_subnet_cidrs` entry when using a new region. The backend connection limit is fixed at 1000 in the Ansible task and is not configurable in inventory.
+Add a balancer by adding another unique key under `balancers` and setting its named fields. Add a `proxy_subnet_cidrs` entry when using a new region. The backend connection limit is fixed at 1000 in the Ansible task and cannot be configured in the inventory.
 
-The script does not reconcile field changes for existing resources. To change or remove existing infrastructure, update it manually with `gcloud`; changing the inventory alone will not update or delete it.
+The playbook does not reconcile field changes for existing resources. To change or remove existing infrastructure, update it manually with `gcloud`; changing the inventory alone will not update or delete it.

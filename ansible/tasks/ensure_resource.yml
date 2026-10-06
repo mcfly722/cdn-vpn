@@ -8,8 +8,10 @@
     resource_check.rc != 0 and
     'not_found' not in ((resource_check.stderr | default('')) | lower) and
     'not found' not in ((resource_check.stderr | default('')) | lower) and
+    'does not exist' not in ((resource_check.stderr | default('')) | lower) and
     'not_found' not in ((resource_check.stdout | default('')) | lower) and
-    'not found' not in ((resource_check.stdout | default('')) | lower)
+    'not found' not in ((resource_check.stdout | default('')) | lower) and
+    'does not exist' not in ((resource_check.stdout | default('')) | lower)
 
 - name: "Skip existing {{ resource_label }}"
   ansible.builtin.debug:
