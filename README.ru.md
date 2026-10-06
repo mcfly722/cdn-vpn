@@ -1,6 +1,6 @@
 # CDN VPN: балансировщики нагрузки
 
-Настройка через Ansible региональных TCP proxy балансировщиков Google Cloud с backend-ами типа Internet NEG. Балансировщик принимает TCP-соединения клиентов на публичный IP и перенаправляет их на заданные FQDN и порт backend-а.
+Настройка через Ansible региональных TCP proxy балансировщиков Google Cloud с backend-ами типа Internet NEG. Балансировщик принимает TCP-соединения клиентов на публичный IP и перенаправляет их на заданный IP-адрес и порт backend-а.
 
 ## Схема сетевого взаимодействия
 
@@ -10,7 +10,7 @@ flowchart LR
   DNS -->|Возвращает ingress IP| FR[Региональное forwarding rule TCP]
   FR --> Proxy[Региональный target TCP proxy]
   Proxy --> BS[Региональный backend service]
-  BS --> NEG[Региональный Internet NEG FQDN:port]
+  BS --> NEG[Региональный Internet NEG IP:port]
   NEG --> NAT[Cloud NAT подменяет исходящий IP на статический]
   NAT --> Backend[Backend 3x-ui]
   Health[Региональная TCP health check] -.->|Проверяет порт backend-а| Backend
@@ -74,13 +74,11 @@ proxy_subnet_cidrs:
   europe-west4: 10.0.0.0/24
 
 router_asn: 64514
-health_check_port: 445
 
 balancers:
   edge1:
     region: europe-west4
-    dns_name: edge1.example.net.
-    backend_fqdn: backend1.example.org
+    backend_ip: 212.118.36.11
     backend_port: 445
     frontend_port: 443
 ```
@@ -91,13 +89,15 @@ balancers:
 | `proxy_subnet_cidrs` | Map «регион → CIDR proxy-only subnet». Добавьте запись для каждого региона; CIDR не должен пересекаться с другими подсетями VPC. |
 | Ключ в `balancers` | Уникальное базовое имя балансировщика. Скрипт формирует по нему имена NEG, backend service, health check, target proxy, forwarding rule и ingress IP. |
 | `balancers.<name>.region` | Регион балансировщика. Балансировщики в одном регионе используют общие proxy-only subnet, router, NAT и egress IP этого региона. |
-| `balancers.<name>.dns_name` | Уникальное полное DNS-имя A-записи балансировщика. Укажите hostname в выбранной зоне и завершающую точку. |
-| `balancers.<name>.backend_fqdn` | Публичное DNS-имя backend-сервера, зарегистрированного в Internet NEG. |
-| `balancers.<name>.backend_port` | Порт backend endpoint-а. |
+| DNS-имя балансировщика | Формируется автоматически как `<ключ-балансировщика>.<dnsName зоны>`, включая завершающую точку. Например, `edge1.example.net.` |
+| `balancers.<name>.backend_ip` | Публичный IPv4-адрес backend-сервера, зарегистрированного в Internet NEG. |
+| `balancers.<name>.backend_port` | Порт backend endpoint-а и TCP health check этого балансировщика. |
 | `balancers.<name>.frontend_port` | TCP-порт для клиентских подключений; по умолчанию `443`. |
 
-`GCP_PROJECT_ID` передаётся playbook из локальной переменной окружения. `router_asn` и `health_check_port` задаются в YAML inventory. Для запуска Ansible на управляющей машине требуется Python.
+`GCP_PROJECT_ID` передаётся playbook из локальной переменной окружения. `router_asn` задаётся в YAML inventory. Для запуска Ansible на управляющей машине требуется Python.
 
-Чтобы добавить балансировщик, добавьте новый уникальный ключ в `balancers` и заполните его именованные поля. Для нового региона добавьте запись в `proxy_subnet_cidrs`. Лимит соединений backend-а зафиксирован в Ansible-задаче на 1000 и не настраивается через inventory.
+Чтобы добавить балансировщик, добавьте новый уникальный ключ в `balancers` и заполните его именованные поля. Для нового региона добавьте запись в `proxy_subnet_cidrs`. Для backend типа Internet NEG лимит соединений отдельно не задаётся.
+
+При переходе с FQDN NEG playbook заменит его на IP NEG, только если старый NEG пуст. Если в нём остались endpoints, запуск остановится без их удаления.
 
 Скрипт не сверяет поля уже существующих ресурсов. Изменения и удаление существующей инфраструктуры выполняйте вручную через `gcloud`; одного изменения inventory недостаточно.

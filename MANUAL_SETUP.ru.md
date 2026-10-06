@@ -78,13 +78,12 @@ gcloud dns managed-zones describe "$DNS_ZONE" `
 
 ## Добавление балансировщика
 
-Задайте параметры нового балансировщика: уникальное имя, публичный FQDN backend-а и уникальное DNS-имя внутри делегированной зоны. В конце полного DNS-имени нужна точка.
+Задайте параметры нового балансировщика: уникальное имя, публичный IP backend-а и уникальное DNS-имя внутри делегированной зоны. В конце полного DNS-имени нужна точка.
 
 ```powershell
 $BALANCER_NAME = "balancer1"
-$BACKEND_FQDN = "v1025101.hosted-by-vdsina.ru"
+$BACKEND_IP = "212.118.36.11"
 $BACKEND_PORT = "445"
-$HEALTH_CHECK_PORT = "445"
 $FRONTEND_PORT = "443"
 $DNS_NAME = "balancer1.cdn2954732.de5.net."
 ```
@@ -95,7 +94,7 @@ $DNS_NAME = "balancer1.cdn2954732.de5.net."
 gcloud beta compute network-endpoint-groups create "${BALANCER_NAME}-neg" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --network-endpoint-type="INTERNET_FQDN_PORT" `
+  --network-endpoint-type="INTERNET_IP_PORT" `
   --network="lb-network"
 ```
 
@@ -147,7 +146,7 @@ gcloud compute forwarding-rules create "${BALANCER_NAME}-lb-forwarding-rule" `
 gcloud compute health-checks create tcp "${BALANCER_NAME}-health-check" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --port="$HEALTH_CHECK_PORT" `
+  --port="$BACKEND_PORT" `
   --timeout=5s `
   --check-interval=5s `
   --healthy-threshold=2 `
@@ -160,13 +159,13 @@ gcloud compute backend-services update "${BALANCER_NAME}-lb" `
   --health-checks-region="$REGION"
 ```
 
-Добавьте FQDN и порт backend-а в NEG:
+Добавьте IP и порт backend-а в NEG:
 
 ```powershell
 gcloud compute network-endpoint-groups update "${BALANCER_NAME}-neg" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --add-endpoint="fqdn=${BACKEND_FQDN},port=${BACKEND_PORT}"
+  --add-endpoint="ip=${BACKEND_IP},port=${BACKEND_PORT}"
 ```
 
 Создайте DNS A-запись, указывающую на зарезервированный ingress IP. Наборы записей и их значения видны на странице [DNS zone details](https://console.cloud.google.com/net-services/dns/zones/cdn2954732/details?project=vpn-cdn):

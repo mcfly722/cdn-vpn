@@ -3,8 +3,8 @@
   ansible.builtin.set_fact:
     balancer_name: "{{ balancer_item.key }}"
     balancer_region: "{{ balancer_item.value.region }}"
-    balancer_dns_name: "{{ balancer_item.value.dns_name }}"
-    balancer_backend_fqdn: "{{ balancer_item.value.backend_fqdn }}"
+    balancer_dns_name: "{{ balancer_item.key }}.{{ dns_zone_suffix }}"
+    balancer_backend_ip: "{{ balancer_item.value.backend_ip }}"
     balancer_backend_port: "{{ balancer_item.value.backend_port }}"
     balancer_frontend_port: "{{ balancer_item.value.frontend_port | default(443) }}"
     neg_name: "{{ balancer_item.key }}-neg"
@@ -14,30 +14,8 @@
     ingress_address_name: "{{ balancer_item.key }}-ip"
     forwarding_rule_name: "{{ balancer_item.key }}-lb-forwarding-rule"
 
-- name: Ensure Internet NEG
-  ansible.builtin.include_tasks: ensure_resource.yml
-  vars:
-    resource_label: "Internet NEG {{ neg_name }}"
-    resource_describe:
-      - gcloud
-      - beta
-      - compute
-      - network-endpoint-groups
-      - describe
-      - "{{ neg_name }}"
-      - "--project={{ project_id }}"
-      - "--region={{ balancer_region }}"
-    resource_create:
-      - gcloud
-      - beta
-      - compute
-      - network-endpoint-groups
-      - create
-      - "{{ neg_name }}"
-      - "--project={{ project_id }}"
-      - "--region={{ balancer_region }}"
-      - --network-endpoint-type=INTERNET_FQDN_PORT
-      - --network=lb-network
+- name: Ensure IP-based Internet NEG
+  ansible.builtin.include_tasks: ensure_ip_neg.yml
 
 - name: Ensure regional TCP health check
   ansible.builtin.include_tasks: ensure_resource.yml
@@ -60,11 +38,39 @@
       - "{{ health_check_name }}"
       - "--project={{ project_id }}"
       - "--region={{ balancer_region }}"
-      - "--port={{ health_check_port }}"
+      - "--port={{ balancer_backend_port }}"
       - --timeout=5s
       - --check-interval=5s
       - --healthy-threshold=2
       - --unhealthy-threshold=3
+
+- name: Read existing TCP health check port
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - health-checks
+      - describe
+      - "{{ health_check_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=value(tcpHealthCheck.port)
+  register: existing_tcp_health_check
+  changed_when: false
+
+- name: Update TCP health check to use backend port
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - health-checks
+      - update
+      - tcp
+      - "{{ health_check_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--port={{ balancer_backend_port }}"
+  when: existing_tcp_health_check.stdout | trim != (balancer_backend_port | string)
 
 - name: Ensure regional backend service
   ansible.builtin.include_tasks: ensure_resource.yml
@@ -107,7 +113,21 @@
       - "--health-checks-region={{ balancer_region }}"
   when: resource_created | bool
 
-- name: Attach NEG to newly created backend service
+- name: Read backend groups attached to backend service
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - backend-services
+      - describe
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=value(backends.group)
+  register: backend_service_groups
+  changed_when: false
+
+- name: Attach NEG to backend service if absent
   ansible.builtin.command:
     argv:
       - gcloud
@@ -119,10 +139,11 @@
       - "--region={{ balancer_region }}"
       - "--network-endpoint-group={{ neg_name }}"
       - "--network-endpoint-group-region={{ balancer_region }}"
-      - --balancing-mode=CONNECTION
-      - --max-connections-per-endpoint=1000
-      - --capacity-scaler=1
-  when: resource_created | bool
+  when: >-
+    backend_service_groups.stdout_lines
+    | select('search', '/networkEndpointGroups/' ~ neg_name ~ '$')
+    | list
+    | length == 0
 
 - name: List endpoints in Internet NEG
   ansible.builtin.command:
@@ -135,7 +156,7 @@
       - "{{ neg_name }}"
       - "--project={{ project_id }}"
       - "--region={{ balancer_region }}"
-      - --format=value(networkEndpoint.fqdn,networkEndpoint.port)
+      - --format=value(networkEndpoint.ip,networkEndpoint.port)
   register: endpoint_list
   changed_when: false
 
@@ -150,10 +171,10 @@
       - "{{ neg_name }}"
       - "--project={{ project_id }}"
       - "--region={{ balancer_region }}"
-      - "--add-endpoint=fqdn={{ balancer_backend_fqdn }},port={{ balancer_backend_port }}"
+      - "--add-endpoint=ip={{ balancer_backend_ip }},port={{ balancer_backend_port }}"
   when: >-
     endpoint_list.stdout_lines
-    | select('match', '^' ~ (balancer_backend_fqdn | regex_escape) ~ '\s+' ~ (balancer_backend_port | string) ~ '$')
+    | select('match', '^' ~ (balancer_backend_ip | regex_escape) ~ '\s+' ~ (balancer_backend_port | string) ~ '$')
     | list
     | length == 0
 

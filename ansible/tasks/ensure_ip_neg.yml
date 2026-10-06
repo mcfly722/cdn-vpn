@@ -1,0 +1,118 @@
+---
+- name: Inspect existing Internet NEG type
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - describe
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=json
+  register: existing_neg_result
+  changed_when: false
+  failed_when: >-
+    existing_neg_result.rc != 0 and
+    'not_found' not in ((existing_neg_result.stderr | default('')) | lower) and
+    'not found' not in ((existing_neg_result.stderr | default('')) | lower) and
+    'does not exist' not in ((existing_neg_result.stderr | default('')) | lower)
+
+- name: Read existing NEG details
+  ansible.builtin.set_fact:
+    existing_neg_details: "{{ existing_neg_result.stdout | default('{}', true) | from_json }}"
+  when: existing_neg_result.rc == 0
+
+- name: Refuse to replace non-empty NEG of a different endpoint type
+  ansible.builtin.assert:
+    that:
+      - existing_neg_details.size | int == 0
+    fail_msg: >-
+      {{ neg_name }} has type {{ existing_neg_details.networkEndpointType }} and contains
+      {{ existing_neg_details.size }} endpoints. Remove or migrate those endpoints before
+      switching this NEG to INTERNET_IP_PORT.
+  when:
+    - existing_neg_result.rc == 0
+    - existing_neg_details.networkEndpointType != 'INTERNET_IP_PORT'
+
+- name: Inspect backend groups before replacing an empty FQDN NEG
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - backend-services
+      - describe
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --format=value(backends.group)
+  register: existing_neg_backend_groups
+  changed_when: false
+  failed_when: >-
+    existing_neg_backend_groups.rc != 0 and
+    'not_found' not in ((existing_neg_backend_groups.stderr | default('')) | lower) and
+    'not found' not in ((existing_neg_backend_groups.stderr | default('')) | lower) and
+    'does not exist' not in ((existing_neg_backend_groups.stderr | default('')) | lower)
+  when:
+    - existing_neg_result.rc == 0
+    - existing_neg_details.networkEndpointType != 'INTERNET_IP_PORT'
+
+- name: Detach empty FQDN NEG from backend service before type migration
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - backend-services
+      - remove-backend
+      - "{{ backend_service_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - "--network-endpoint-group={{ neg_name }}"
+      - "--network-endpoint-group-region={{ balancer_region }}"
+  when:
+    - existing_neg_result.rc == 0
+    - existing_neg_details.networkEndpointType != 'INTERNET_IP_PORT'
+    - existing_neg_backend_groups.stdout_lines | default([]) | select('search', '/networkEndpointGroups/' ~ neg_name ~ '$') | list | length > 0
+
+- name: Delete empty NEG with obsolete endpoint type
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - delete
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --quiet
+  when:
+    - existing_neg_result.rc == 0
+    - existing_neg_details.networkEndpointType != 'INTERNET_IP_PORT'
+  changed_when: true
+
+- name: Ensure IP-based Internet NEG
+  ansible.builtin.include_tasks: ensure_resource.yml
+  vars:
+    resource_label: "IP-based Internet NEG {{ neg_name }}"
+    resource_describe:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - describe
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+    resource_create:
+      - gcloud
+      - beta
+      - compute
+      - network-endpoint-groups
+      - create
+      - "{{ neg_name }}"
+      - "--project={{ project_id }}"
+      - "--region={{ balancer_region }}"
+      - --network-endpoint-type=INTERNET_IP_PORT
+      - --network=lb-network

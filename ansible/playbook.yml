@@ -25,6 +25,23 @@
       changed_when: false
       no_log: true
 
+    - name: Read DNS zone suffix
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - dns
+          - managed-zones
+          - describe
+          - "{{ dns_managed_zone }}"
+          - "--project={{ project_id }}"
+          - --format=value(dnsName)
+      register: dns_zone_suffix_result
+      changed_when: false
+
+    - name: Set DNS zone suffix
+      ansible.builtin.set_fact:
+        dns_zone_suffix: "{{ dns_zone_suffix_result.stdout | trim }}"
+
     - name: Ensure shared VPC network
       ansible.builtin.include_tasks: tasks/ensure_resource.yml
       vars:

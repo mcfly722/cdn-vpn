@@ -78,13 +78,12 @@ At the domain registrar, delegate the domain to the NS servers shown for this ma
 
 ## Add a balancer
 
-Set values for the new balancer. Use a unique name, a public backend FQDN, and a unique hostname inside the delegated DNS zone. The DNS hostname includes the required trailing dot.
+Set values for the new balancer. Use a unique name, a public backend IP, and a unique hostname inside the delegated DNS zone. The DNS hostname includes the required trailing dot.
 
 ```powershell
 $BALANCER_NAME = "balancer1"
-$BACKEND_FQDN = "v1025101.hosted-by-vdsina.ru"
+$BACKEND_IP = "212.118.36.11"
 $BACKEND_PORT = "445"
-$HEALTH_CHECK_PORT = "445"
 $FRONTEND_PORT = "443"
 $DNS_NAME = "balancer1.cdn2954732.de5.net."
 ```
@@ -95,7 +94,7 @@ Create a regional Internet NEG for this backend:
 gcloud beta compute network-endpoint-groups create "${BALANCER_NAME}-neg" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --network-endpoint-type="INTERNET_FQDN_PORT" `
+  --network-endpoint-type="INTERNET_IP_PORT" `
   --network="lb-network"
 ```
 
@@ -147,7 +146,7 @@ Create a TCP health check and attach it to the backend service:
 gcloud compute health-checks create tcp "${BALANCER_NAME}-health-check" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --port="$HEALTH_CHECK_PORT" `
+  --port="$BACKEND_PORT" `
   --timeout=5s `
   --check-interval=5s `
   --healthy-threshold=2 `
@@ -160,13 +159,13 @@ gcloud compute backend-services update "${BALANCER_NAME}-lb" `
   --health-checks-region="$REGION"
 ```
 
-Register the backend FQDN and port in the NEG:
+Register the backend IP and port in the NEG:
 
 ```powershell
 gcloud compute network-endpoint-groups update "${BALANCER_NAME}-neg" `
   --project="$PROJECT_ID" `
   --region="$REGION" `
-  --add-endpoint="fqdn=${BACKEND_FQDN},port=${BACKEND_PORT}"
+  --add-endpoint="ip=${BACKEND_IP},port=${BACKEND_PORT}"
 ```
 
 Create the Cloud DNS A record using the reserved ingress IP:

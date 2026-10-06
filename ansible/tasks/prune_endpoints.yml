@@ -10,7 +10,7 @@
       - "{{ balancer_item.key }}-neg"
       - "--project={{ project_id }}"
       - "--region={{ balancer_item.value.region }}"
-      - --format=value(networkEndpoint.fqdn,networkEndpoint.port)
+      - --format=value(networkEndpoint.ip,networkEndpoint.port)
   register: configured_neg_endpoints
   changed_when: false
 
@@ -19,7 +19,7 @@
     stale_endpoint_lines: >-
       {{ configured_neg_endpoints.stdout_lines | reject('match', expected_endpoint_pattern) | list }}
   vars:
-    expected_endpoint_pattern: "{{ '^' ~ (balancer_item.value.backend_fqdn | regex_escape) ~ '\\s+' ~ (balancer_item.value.backend_port | string) ~ '$' }}"
+    expected_endpoint_pattern: "{{ '^' ~ (balancer_item.value.backend_ip | regex_escape) ~ '\\s+' ~ (balancer_item.value.backend_port | string) ~ '$' }}"
 
 - name: Show stale NEG endpoint removal plan
   ansible.builtin.debug:
@@ -41,7 +41,7 @@
       - "{{ balancer_item.key }}-neg"
       - "--project={{ project_id }}"
       - "--region={{ balancer_item.value.region }}"
-      - "--remove-endpoint=fqdn={{ stale_endpoint.split()[0] }},port={{ stale_endpoint.split()[1] }}"
+      - "--remove-endpoint=ip={{ stale_endpoint.split()[0] }},port={{ stale_endpoint.split()[1] }}"
   loop: "{{ stale_endpoint_lines }}"
   loop_control:
     loop_var: stale_endpoint

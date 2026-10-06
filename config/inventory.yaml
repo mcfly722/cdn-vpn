@@ -4,12 +4,15 @@ proxy_subnet_cidrs:
   europe-west4: 10.0.0.0/24
 
 router_asn: 64514
-health_check_port: 445
 
 balancers:
-  balancer1:
+  balancer4:
     region: europe-west4
-    dns_name: balancer1.cdn2954732.de5.net.
-    backend_fqdn: v1025101.hosted-by-vdsina.ru
+    backend_ip: 212.118.36.11
+    backend_port: 444
+    frontend_port: 443
+  balancer5:
+    region: europe-west4
+    backend_ip: 212.118.36.11
     backend_port: 445
     frontend_port: 443

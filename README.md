@@ -1,6 +1,6 @@
 # CDN VPN Load Balancers
 
-Ansible setup for regional Google Cloud TCP proxy load balancers with Internet NEG backends. A balancer accepts client TCP connections on its public IP and forwards them to a configured backend FQDN and port.
+Ansible setup for regional Google Cloud TCP proxy load balancers with Internet NEG backends. A balancer accepts client TCP connections on its public IP and forwards them to a configured backend IP and port.
 
 ## Network flow
 
@@ -10,7 +10,7 @@ flowchart LR
   DNS -->|Resolves to ingress IP| FR[Regional forwarding rule TCP]
   FR --> Proxy[Regional target TCP proxy]
   Proxy --> BS[Regional backend service]
-  BS --> NEG[Regional Internet NEG FQDN:port]
+  BS --> NEG[Regional Internet NEG IP:port]
   NEG --> NAT[Cloud NAT translates proxy egress to fixed IP]
   NAT --> Backend[3x-ui backend]
   Health[Regional TCP health check] -.->|Checks backend port| Backend
@@ -74,13 +74,11 @@ proxy_subnet_cidrs:
   europe-west4: 10.0.0.0/24
 
 router_asn: 64514
-health_check_port: 445
 
 balancers:
   edge1:
     region: europe-west4
-    dns_name: edge1.example.net.
-    backend_fqdn: backend1.example.org
+    backend_ip: 212.118.36.11
     backend_port: 445
     frontend_port: 443
 ```
@@ -91,13 +89,15 @@ balancers:
 | `proxy_subnet_cidrs` | Map of region to proxy-only subnet CIDR. Add an entry for every region; CIDRs must not overlap other VPC subnets. |
 | Key in `balancers` | Unique base name for the balancer. The playbook derives the NEG, backend service, health check, target proxy, forwarding rule, and ingress IP names from it. |
 | `balancers.<name>.region` | Google Cloud region for this balancer. Balancers in the same region share that region's proxy-only subnet, router, NAT, and egress IP. |
-| `balancers.<name>.dns_name` | Unique fully qualified DNS hostname for this balancer's A record. Use a trailing dot and a hostname in the selected managed zone. |
-| `balancers.<name>.backend_fqdn` | Public DNS name of the backend server registered in the Internet NEG. |
-| `balancers.<name>.backend_port` | Port of the backend endpoint. |
+| Balancer DNS name | Automatically formed as `<balancer-key>.<zone-dnsName>`, including the trailing dot. For example, `edge1.example.net.` |
+| `balancers.<name>.backend_ip` | Public IPv4 address of the backend server registered in the Internet NEG. |
+| `balancers.<name>.backend_port` | Port of the backend endpoint and this balancer's TCP health check. |
 | `balancers.<name>.frontend_port` | TCP port clients connect to; defaults to `443`. |
 
-`GCP_PROJECT_ID` is passed to the playbook from the local environment. `router_asn` and `health_check_port` are set in the YAML inventory. Ansible requires Python on the control machine.
+`GCP_PROJECT_ID` is passed to the playbook from the local environment. `router_asn` is set in the YAML inventory. Ansible requires Python on the control machine.
 
-Add a balancer by adding another unique key under `balancers` and setting its named fields. Add a `proxy_subnet_cidrs` entry when using a new region. The backend connection limit is fixed at 1000 in the Ansible task and cannot be configured in the inventory.
+Add a balancer by adding another unique key under `balancers` and setting its named fields. Add a `proxy_subnet_cidrs` entry when using a new region. No separate connection limit is set for Internet NEG backends.
+
+When switching from an FQDN NEG, the playbook replaces it with an IP NEG only if the old NEG is empty. If it still contains endpoints, the run stops without deleting them.
 
 The playbook does not reconcile field changes for existing resources. To change or remove existing infrastructure, update it manually with `gcloud`; changing the inventory alone will not update or delete it.
