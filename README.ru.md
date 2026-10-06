@@ -35,7 +35,6 @@ sudo apt install ansible-core
 # идем по предоставленной ссылке чтобы получить токен для аутентификации, авторизуем токеном gcloud консоль
 gcloud auth login --no-launch-browser
 
-
 # текущий проект "vpn-cdn"
 export GCP_PROJECT_ID="vpn-cdn"
 gcloud config set project "$GCP_PROJECT_ID"

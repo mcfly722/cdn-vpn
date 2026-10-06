@@ -33,10 +33,13 @@ After installing the dependencies, authenticate with gcloud, select the project,
 
 ```bash
 gcloud auth login --no-launch-browser
-# Open the displayed URL, complete authentication, and enter the verification code in the terminal.
+# Open the URL printed by gcloud and complete authentication using the verification code.
 
+# Active project: vpn-cdn.
 export GCP_PROJECT_ID="vpn-cdn"
 gcloud config set project "$GCP_PROJECT_ID"
+
+# Create the load balancer resources.
 ansible-playbook ansible/playbook.yml
 ```
 
