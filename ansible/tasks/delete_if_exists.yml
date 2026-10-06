@@ -1,0 +1,28 @@
+---
+- name: "Check {{ cleanup_label }} before pruning"
+  ansible.builtin.command:
+    argv: "{{ cleanup_describe }}"
+  register: cleanup_check
+  changed_when: false
+  failed_when: >-
+    cleanup_check.rc != 0 and
+    'not_found' not in ((cleanup_check.stderr | default('')) | lower) and
+    'not found' not in ((cleanup_check.stderr | default('')) | lower) and
+    'does not exist' not in ((cleanup_check.stderr | default('')) | lower) and
+    'not_found' not in ((cleanup_check.stdout | default('')) | lower) and
+    'not found' not in ((cleanup_check.stdout | default('')) | lower) and
+    'does not exist' not in ((cleanup_check.stdout | default('')) | lower)
+
+- name: "Show planned removal of {{ cleanup_label }}"
+  ansible.builtin.debug:
+    msg: "Would delete {{ cleanup_label }}."
+  when:
+    - cleanup_check.rc == 0
+    - not (prune_confirmed | bool)
+
+- name: "Delete {{ cleanup_label }}"
+  ansible.builtin.command:
+    argv: "{{ cleanup_delete }}"
+  when:
+    - cleanup_check.rc == 0
+    - prune_confirmed | bool

@@ -20,22 +20,14 @@ Cloud DNS resolves each configured hostname to the balancer's reserved ingress I
 
 ## Run Ansible
 
-Run the playbook from the repository root on Linux. Also install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install-sdk).
+Run the playbook from the repository root on Linux.
 
 ```bash
 sudo apt update
 sudo apt install ansible-core
 ```
 
-Install the Google Cloud CLI from Google's apt repository:
-
-```bash
-sudo apt install apt-transport-https ca-certificates gnupg curl
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/cloud.google.gpg
-echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
-sudo apt update
-sudo apt install google-cloud-cli
-```
+For Google Cloud CLI installation instructions, see the [official Google documentation](https://cloud.google.com/sdk/docs/install).
 
 After installing the dependencies, authenticate with gcloud, select the project, and run the playbook:
 
@@ -50,7 +42,21 @@ ansible-playbook ansible/playbook.yml
 
 Enable the Compute Engine and Cloud DNS APIs first. The authenticated Google account needs `roles/compute.networkAdmin`, `roles/compute.loadBalancerAdmin`, `roles/dns.admin`, and `roles/serviceusage.serviceUsageConsumer` in the project.
 
-Ansible runs each `gcloud` operation as a task. It checks resources by name, skips existing resources without comparing or updating their fields, and creates missing ones. It does not delete resources removed from the inventory. No GitHub Actions, service-account key, or persistent state bucket is used.
+Ansible runs each `gcloud` operation as a task. It checks resources by name, skips existing resources without comparing or updating their fields, and creates missing ones. By default, it does not delete resources removed from the inventory. No GitHub Actions, service-account key, or persistent state bucket is used.
+
+To find resources that are absent from the inventory, run cleanup in preview mode:
+
+```bash
+ansible-playbook ansible/prune.yml
+```
+
+The playbook prints candidates but does not delete them. Review the list, then confirm deletion in a separate run:
+
+```bash
+ansible-playbook ansible/prune.yml -e prune_confirmed=true
+```
+
+Cleanup discovers resources by this project's naming convention. The shared `lb-network` is never deleted. DNS cleanup only checks names matching `<balancer-key>.<zone-DNS-suffix>`; records with custom hostnames must be removed manually. Review the candidate list before confirming, especially if the project contains resources using the same names.
 
 For manual setup, see [`MANUAL_SETUP.md`](MANUAL_SETUP.md).
 
@@ -87,7 +93,7 @@ balancers:
 | `balancers.<name>.backend_port` | Port of the backend endpoint. |
 | `balancers.<name>.frontend_port` | TCP port clients connect to; defaults to `443`. |
 
-`GCP_PROJECT_ID` is read from the local environment. `router_asn` and `health_check_port` are set in the YAML inventory. Ansible requires Python on the control machine.
+`GCP_PROJECT_ID` is passed to the playbook from the local environment. `router_asn` and `health_check_port` are set in the YAML inventory. Ansible requires Python on the control machine.
 
 Add a balancer by adding another unique key under `balancers` and setting its named fields. Add a `proxy_subnet_cidrs` entry when using a new region. The backend connection limit is fixed at 1000 in the Ansible task and cannot be configured in the inventory.
 

@@ -1,0 +1,49 @@
+---
+- name: Set inferred DNS name for orphan balancer
+  ansible.builtin.set_fact:
+    orphan_dns_name: "{{ orphan_balancer_name }}.{{ dns_zone_name.stdout }}"
+
+- name: Check inferred orphan DNS A record
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - dns
+      - record-sets
+      - describe
+      - "{{ orphan_dns_name }}"
+      - "--project={{ project_id }}"
+      - "--zone={{ dns_managed_zone }}"
+      - --type=A
+  register: orphan_dns_check
+  changed_when: false
+  failed_when: >-
+    orphan_dns_check.rc != 0 and
+    'not_found' not in ((orphan_dns_check.stderr | default('')) | lower) and
+    'not found' not in ((orphan_dns_check.stderr | default('')) | lower) and
+    'does not exist' not in ((orphan_dns_check.stderr | default('')) | lower) and
+    'not_found' not in ((orphan_dns_check.stdout | default('')) | lower) and
+    'not found' not in ((orphan_dns_check.stdout | default('')) | lower) and
+    'does not exist' not in ((orphan_dns_check.stdout | default('')) | lower)
+
+- name: Show inferred orphan DNS A record removal plan
+  ansible.builtin.debug:
+    msg: "Would delete DNS A record {{ orphan_dns_name }}."
+  when:
+    - orphan_dns_check.rc == 0
+    - not (prune_confirmed | bool)
+
+- name: Delete inferred orphan DNS A record
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - dns
+      - record-sets
+      - delete
+      - "{{ orphan_dns_name }}"
+      - "--project={{ project_id }}"
+      - "--zone={{ dns_managed_zone }}"
+      - --type=A
+      - --quiet
+  when:
+    - orphan_dns_check.rc == 0
+    - prune_confirmed | bool

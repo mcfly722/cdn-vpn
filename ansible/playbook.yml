@@ -7,6 +7,8 @@
     - ../config/inventory.yaml
   vars:
     project_id: "{{ lookup('env', 'GCP_PROJECT_ID') }}"
+    prune_orphans: false
+    prune_confirmed: false
   tasks:
     - name: Require project ID
       ansible.builtin.assert:
@@ -58,3 +60,7 @@
       loop_control:
         loop_var: balancer_item
         label: "{{ balancer_item.key }}"
+
+    - name: Prune resources absent from inventory
+      ansible.builtin.include_tasks: tasks/prune.yml
+      when: prune_orphans | bool

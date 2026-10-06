@@ -1,0 +1,28 @@
+---
+- name: "List {{ orphan_spec.kind }} resources for pruning"
+  ansible.builtin.command:
+    argv: "{{ orphan_spec.argv }}"
+  register: orphan_list_result
+  changed_when: false
+
+- name: "Collect orphan {{ orphan_spec.kind }} resources"
+  ansible.builtin.set_fact:
+    orphan_resources: >-
+      {{ orphan_resources + [{
+        'kind': orphan_spec.kind,
+        'name': discovered_resource.name,
+        'region': candidate_region,
+        'balancer': candidate_balancer
+      }] }}
+  loop: "{{ orphan_list_result.stdout | from_json }}"
+  loop_control:
+    loop_var: discovered_resource
+    label: "{{ discovered_resource.name }}"
+  vars:
+    candidate_region: "{{ (discovered_resource.region | default('', true)) | regex_replace('^.*/regions/', '') }}"
+    candidate_balancer: "{{ discovered_resource.name | regex_replace(orphan_spec.suffix ~ '$', '') }}"
+  when:
+    - discovered_resource.name is search(orphan_spec.suffix ~ '$')
+    - candidate_balancer not in (balancers.keys() | list)
+    - candidate_region | length > 0
+    - not (orphan_spec.kind == 'ingress_address' and discovered_resource.name == 'lb-router-ip')

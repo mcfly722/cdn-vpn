@@ -1,0 +1,19 @@
+---
+- name: "Show orphan {{ deletion_spec.kind }} removal plan"
+  ansible.builtin.debug:
+    msg: "Would delete {{ deletion_spec.kind }} {{ orphan_resource.name }} in {{ orphan_resource.region }}."
+  loop: "{{ orphan_resources | selectattr('kind', 'equalto', deletion_spec.kind) | list }}"
+  loop_control:
+    loop_var: orphan_resource
+    label: "{{ orphan_resource.name }}"
+  when: not (prune_confirmed | bool)
+
+- name: "Delete orphan {{ deletion_spec.kind }}"
+  ansible.builtin.command:
+    argv: "{{ deletion_spec.argv + [orphan_resource.name, '--project=' ~ project_id, '--region=' ~ orphan_resource.region, '--quiet'] }}"
+  loop: "{{ orphan_resources | selectattr('kind', 'equalto', deletion_spec.kind) | list }}"
+  loop_control:
+    loop_var: orphan_resource
+    label: "{{ orphan_resource.name }}"
+  changed_when: true
+  when: prune_confirmed | bool

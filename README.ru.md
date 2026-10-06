@@ -20,38 +20,47 @@ Cloud DNS преобразует hostname из inventory в зарезервир
 
 ## Запуск Ansible
 
-Запускайте playbook из корня репозитория в Linux. Установите [Google Cloud CLI](https://cloud.google.com/sdk/docs/install-sdk).
+Запускайте playbook из корня репозитория в Linux.
 
 ```bash
 sudo apt update
 sudo apt install ansible-core
 ```
 
-Установите Google Cloud CLI из apt-репозитория Google:
-
-```bash
-sudo apt install apt-transport-https ca-certificates gnupg curl
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/cloud.google.gpg
-echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
-sudo apt update
-sudo apt install google-cloud-cli
-```
+Инструкции по установке Google Cloud CLI приведены в [официальной документации Google](https://cloud.google.com/sdk/docs/install).
 
 После установки зависимостей задайте проект, войдите в Google Cloud CLI и запустите playbook:
 
 ```bash
-gcloud auth login --no-launch-browser
 # идем по предоставленной ссылке чтобы получить токен для аутентификации, авторизуем токеном gcloud консоль
+gcloud auth login --no-launch-browser
 
 
+# текущий проект "vpn-cdn"
 export GCP_PROJECT_ID="vpn-cdn"
 gcloud config set project "$GCP_PROJECT_ID"
+
+# запускаем создание объектов балансировщиков
 ansible-playbook ansible/playbook.yml
 ```
 
 Предварительно включите Compute Engine API и Cloud DNS API. У аутентифицированного Google-аккаунта должны быть роли `roles/compute.networkAdmin`, `roles/compute.loadBalancerAdmin`, `roles/dns.admin` и `roles/serviceusage.serviceUsageConsumer` в проекте.
 
-Ansible выполняет каждую операцию `gcloud` отдельной задачей. Он проверяет ресурсы по имени, пропускает существующие без сравнения или изменения их полей и создаёт отсутствующие. Ресурсы, удалённые из inventory, автоматически не удаляются. GitHub Actions, ключ service account и постоянное хранилище состояния не используются.
+Ansible выполняет каждую операцию `gcloud` отдельной задачей. Он проверяет ресурсы по имени, пропускает существующие без сравнения или изменения их полей и создаёт отсутствующие. По умолчанию ресурсы, удалённые из inventory, не удаляются. GitHub Actions, ключ service account и постоянное хранилище состояния не используются.
+
+Для поиска ресурсов, отсутствующих в inventory, запустите очистку в режиме просмотра:
+
+```bash
+ansible-playbook ansible/prune.yml
+```
+
+Playbook выведет найденные кандидаты, но не удалит их. После проверки списка подтвердите удаление отдельным запуском:
+
+```bash
+ansible-playbook ansible/prune.yml -e prune_confirmed=true
+```
+
+Очистка ищет ресурсы по соглашению об именах, используемому этим проектом. Общий `lb-network` не удаляется. DNS проверяется только по шаблону `<ключ-балансировщика>.<DNS-суффикс зоны>`; записи с произвольными hostname нужно удалять вручную. Перед подтверждением проверьте список, особенно если в проекте есть ресурсы с такими же именами.
 
 Для ручной настройки используйте [инструкцию через `gcloud`](MANUAL_SETUP.ru.md).
 
@@ -88,7 +97,7 @@ balancers:
 | `balancers.<name>.backend_port` | Порт backend endpoint-а. |
 | `balancers.<name>.frontend_port` | TCP-порт для клиентских подключений; по умолчанию `443`. |
 
-`GCP_PROJECT_ID` читается из локальной переменной окружения. `router_asn` и `health_check_port` задаются в YAML inventory. Для запуска Ansible на управляющей машине требуется Python.
+`GCP_PROJECT_ID` передаётся playbook из локальной переменной окружения. `router_asn` и `health_check_port` задаются в YAML inventory. Для запуска Ansible на управляющей машине требуется Python.
 
 Чтобы добавить балансировщик, добавьте новый уникальный ключ в `balancers` и заполните его именованные поля. Для нового региона добавьте запись в `proxy_subnet_cidrs`. Лимит соединений backend-а зафиксирован в Ansible-задаче на 1000 и не настраивается через inventory.
 

@@ -1,0 +1,116 @@
+---
+- name: Initialize orphan cleanup discovery
+  ansible.builtin.set_fact:
+    orphan_resources: []
+    prune_regions: []
+    active_balancer_regions: "{{ balancers | dict2items | map(attribute='value.region') | unique | list }}"
+
+- name: Discover possible orphan balancer resources
+  ansible.builtin.include_tasks: discover_orphans.yml
+  loop:
+    - kind: forwarding_rule
+      suffix: -lb-forwarding-rule
+      argv: [gcloud, compute, forwarding-rules, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - kind: target_tcp_proxy
+      suffix: -lb-target-proxy
+      argv: [gcloud, compute, target-tcp-proxies, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - kind: backend_service
+      suffix: -lb
+      argv: [gcloud, compute, backend-services, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - kind: health_check
+      suffix: -health-check
+      argv: [gcloud, compute, health-checks, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - kind: network_endpoint_group
+      suffix: -neg
+      argv: [gcloud, beta, compute, network-endpoint-groups, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - kind: ingress_address
+      suffix: -ip
+      argv: [gcloud, compute, addresses, list, "--project={{ project_id }}", "--format=json(name,region)"]
+  loop_control:
+    loop_var: orphan_spec
+    label: "{{ orphan_spec.kind }}"
+
+- name: Initialize unused regional shared-resource discovery
+  ansible.builtin.set_fact:
+    prune_regions: >-
+      {{ orphan_resources | map(attribute='region') | unique | list | difference(active_balancer_regions) }}
+
+- name: Discover unused regions with shared subnet resources
+  ansible.builtin.include_tasks: discover_shared_regions.yml
+  loop:
+    - name: lb-subnet
+      argv: [gcloud, compute, networks, subnets, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - name: lb-router
+      argv: [gcloud, compute, routers, list, "--project={{ project_id }}", "--format=json(name,region)"]
+    - name: lb-router-ip
+      argv: [gcloud, compute, addresses, list, "--project={{ project_id }}", "--format=json(name,region)"]
+  loop_control:
+    loop_var: shared_region_spec
+    label: "{{ shared_region_spec.name }}"
+
+- name: Calculate orphan balancer names
+  ansible.builtin.set_fact:
+    orphan_balancer_names: "{{ orphan_resources | map(attribute='balancer') | unique | list | difference(balancers.keys() | list) }}"
+    prune_regions: "{{ prune_regions | unique | list }}"
+
+- name: Show discovered cleanup candidates
+  ansible.builtin.debug:
+    msg:
+      - "Orphan balancers: {{ orphan_balancer_names | join(', ') if orphan_balancer_names else 'none' }}"
+      - "Unused shared-resource regions: {{ prune_regions | join(', ') if prune_regions else 'none' }}"
+      - "Deletion is {{ 'enabled' if prune_confirmed | bool else 'preview only; rerun with prune_confirmed=true to delete' }}."
+
+- name: Prune endpoints absent from active balancer inventory
+  ansible.builtin.include_tasks: prune_endpoints.yml
+  loop: "{{ balancers | dict2items }}"
+  loop_control:
+    loop_var: balancer_item
+    label: "{{ balancer_item.key }}"
+
+- name: Read managed DNS zone suffix for orphan records
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - dns
+      - managed-zones
+      - describe
+      - "{{ dns_managed_zone }}"
+      - "--project={{ project_id }}"
+      - --format=value(dnsName)
+  register: dns_zone_name
+  changed_when: false
+  when: orphan_balancer_names | length > 0
+
+- name: Prune inferred orphan DNS records
+  ansible.builtin.include_tasks: prune_dns.yml
+  loop: "{{ orphan_balancer_names }}"
+  loop_control:
+    loop_var: orphan_balancer_name
+    label: "{{ orphan_balancer_name }}"
+  when: orphan_balancer_names | length > 0
+
+- name: Prune orphan balancer resources in dependency order
+  ansible.builtin.include_tasks: delete_orphan_kind.yml
+  loop:
+    - kind: forwarding_rule
+      argv: [gcloud, compute, forwarding-rules, delete]
+    - kind: target_tcp_proxy
+      argv: [gcloud, compute, target-tcp-proxies, delete]
+    - kind: backend_service
+      argv: [gcloud, compute, backend-services, delete]
+    - kind: network_endpoint_group
+      argv: [gcloud, beta, compute, network-endpoint-groups, delete]
+    - kind: health_check
+      argv: [gcloud, compute, health-checks, delete]
+    - kind: ingress_address
+      argv: [gcloud, compute, addresses, delete]
+  loop_control:
+    loop_var: deletion_spec
+    label: "{{ deletion_spec.kind }}"
+
+- name: Prune unused regional shared resources
+  ansible.builtin.include_tasks: prune_region.yml
+  loop: "{{ prune_regions }}"
+  loop_control:
+    loop_var: prune_region
+    label: "{{ prune_region }}"

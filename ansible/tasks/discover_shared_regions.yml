@@ -1,0 +1,20 @@
+---
+- name: "List shared {{ shared_region_spec.kind }} resources"
+  ansible.builtin.command:
+    argv: "{{ shared_region_spec.argv }}"
+  register: shared_region_list_result
+  changed_when: false
+
+- name: "Collect unused region from {{ shared_region_spec.kind }}"
+  ansible.builtin.set_fact:
+    prune_regions: "{{ (prune_regions + [candidate_region]) | unique | list }}"
+  loop: "{{ shared_region_list_result.stdout | from_json }}"
+  loop_control:
+    loop_var: shared_resource
+    label: "{{ shared_resource.name }}"
+  vars:
+    candidate_region: "{{ (shared_resource.region | default('', true)) | regex_replace('^.*/regions/', '') }}"
+  when:
+    - shared_resource.name == shared_region_spec.name
+    - candidate_region | length > 0
+    - candidate_region not in active_balancer_regions

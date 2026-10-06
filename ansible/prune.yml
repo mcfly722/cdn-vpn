@@ -1,0 +1,28 @@
+---
+- name: Preview or prune Google Cloud resources absent from inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../config/inventory.yaml
+  vars:
+    project_id: "{{ lookup('env', 'GCP_PROJECT_ID') }}"
+    prune_confirmed: false
+  tasks:
+    - name: Require project ID
+      ansible.builtin.assert:
+        that:
+          - project_id | length > 0
+        fail_msg: Set GCP_PROJECT_ID before running the playbook.
+
+    - name: Verify gcloud authentication
+      ansible.builtin.command:
+        argv:
+          - gcloud
+          - auth
+          - print-access-token
+      changed_when: false
+      no_log: true
+
+    - name: Discover and optionally prune resources absent from inventory
+      ansible.builtin.include_tasks: tasks/prune.yml

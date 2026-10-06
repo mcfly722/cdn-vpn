@@ -1,0 +1,94 @@
+---
+- name: Ensure obsolete regional Cloud NAT is absent
+  ansible.builtin.include_tasks: delete_if_exists.yml
+  vars:
+    cleanup_label: "Cloud NAT lb-nat ({{ prune_region }})"
+    cleanup_describe:
+      - gcloud
+      - compute
+      - routers
+      - nats
+      - describe
+      - lb-nat
+      - --router=lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+    cleanup_delete:
+      - gcloud
+      - compute
+      - routers
+      - nats
+      - delete
+      - lb-nat
+      - --router=lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+      - --quiet
+
+- name: Ensure obsolete regional Cloud Router is absent
+  ansible.builtin.include_tasks: delete_if_exists.yml
+  vars:
+    cleanup_label: "Cloud Router lb-router ({{ prune_region }})"
+    cleanup_describe:
+      - gcloud
+      - compute
+      - routers
+      - describe
+      - lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+    cleanup_delete:
+      - gcloud
+      - compute
+      - routers
+      - delete
+      - lb-router
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+      - --quiet
+
+- name: Ensure obsolete regional egress address is absent
+  ansible.builtin.include_tasks: delete_if_exists.yml
+  vars:
+    cleanup_label: "egress address lb-router-ip ({{ prune_region }})"
+    cleanup_describe:
+      - gcloud
+      - compute
+      - addresses
+      - describe
+      - lb-router-ip
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+    cleanup_delete:
+      - gcloud
+      - compute
+      - addresses
+      - delete
+      - lb-router-ip
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+      - --quiet
+
+- name: Ensure obsolete proxy-only subnet is absent
+  ansible.builtin.include_tasks: delete_if_exists.yml
+  vars:
+    cleanup_label: "proxy subnet lb-subnet ({{ prune_region }})"
+    cleanup_describe:
+      - gcloud
+      - compute
+      - networks
+      - subnets
+      - describe
+      - lb-subnet
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+    cleanup_delete:
+      - gcloud
+      - compute
+      - networks
+      - subnets
+      - delete
+      - lb-subnet
+      - "--project={{ project_id }}"
+      - "--region={{ prune_region }}"
+      - --quiet
