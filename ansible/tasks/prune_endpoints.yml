@@ -10,14 +10,14 @@
       - "{{ balancer_item.key }}-neg"
       - "--project={{ project_id }}"
       - "--region={{ balancer_item.value.region }}"
-      - --format=value(networkEndpoint.ip,networkEndpoint.port)
+      - --format=value(networkEndpoint.ipAddress,networkEndpoint.port)
   register: configured_neg_endpoints
   changed_when: false
 
 - name: Identify NEG endpoints missing from inventory
   ansible.builtin.set_fact:
     stale_endpoint_lines: >-
-      {{ configured_neg_endpoints.stdout_lines | reject('match', expected_endpoint_pattern) | list }}
+      {{ configured_neg_endpoints.stdout_lines | reject('match', '^\\s*$') | reject('match', expected_endpoint_pattern) | list }}
   vars:
     expected_endpoint_pattern: "{{ '^' ~ (balancer_item.value.backend_ip | regex_escape) ~ '\\s+' ~ (balancer_item.value.backend_port | string) ~ '$' }}"
 
@@ -27,7 +27,7 @@
   loop: "{{ stale_endpoint_lines }}"
   loop_control:
     loop_var: stale_endpoint
-    label: "{{ stale_endpoint }}"
+    label: "{{ stale_endpoint | trim }}"
   when: not (prune_confirmed | bool)
 
 - name: Remove stale NEG endpoint
@@ -45,6 +45,6 @@
   loop: "{{ stale_endpoint_lines }}"
   loop_control:
     loop_var: stale_endpoint
-    label: "{{ stale_endpoint }}"
+    label: "{{ stale_endpoint | trim }}"
   changed_when: true
   when: prune_confirmed | bool

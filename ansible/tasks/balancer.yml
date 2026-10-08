@@ -156,7 +156,7 @@
       - "{{ neg_name }}"
       - "--project={{ project_id }}"
       - "--region={{ balancer_region }}"
-      - --format=value(networkEndpoint.ip,networkEndpoint.port)
+      - --format=value(networkEndpoint.ipAddress,networkEndpoint.port)
   register: endpoint_list
   changed_when: false
 
