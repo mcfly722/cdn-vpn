@@ -23,11 +23,16 @@ balancers:
     frontend_port: 443
   lb4:
     region: europe-west4
-    backend_ip: 195.63.161.79
+    backend_ip: 195.63.133.75
     backend_port: 10004
     frontend_port: 443
   lb5:
     region: europe-west4
-    backend_ip: 195.63.161.79
+    backend_ip: 195.63.133.75
     backend_port: 10005
+    frontend_port: 443
+  lb6:
+    region: europe-west4
+    backend_ip: 195.63.133.75
+    backend_port: 10006
     frontend_port: 443
